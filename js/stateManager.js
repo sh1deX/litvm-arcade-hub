@@ -1,54 +1,107 @@
 import { getUserProfile, createUserProfile, updateUserProfile } from './supabaseClient.js';
 
 let currentWallet = null; // Track connected wallet for sync
+let activePrefix = '';    // localStorage key prefix for current account
+
+// Base keys (will be prefixed with account identifier)
+const BASE_KEYS = {
+    SCORE: 'score',
+    RECORDS: 'records',
+    TASKS: 'tasks',
+    TRANSACTIONS: 'transactions',
+    NICKNAME: 'nickname',
+    AVATAR: 'avatar',
+    SOCIALS: 'socials',
+    STREAK: 'streak',
+    LAST_LOGIN: 'last_login',
+    XP: 'xp',
+    LEVEL: 'level',
+    GAMES_PLAYED: 'games_played',
+    UNLOCKED_BADGES: 'unlocked_badges'
+};
 
 /**
- * Global State Manager
- * Handles data persistence using localStorage and Supabase.
- * 
- * Keys in localStorage:
- * - litvm_score: Total LitCoins
- * - litvm_records: Object { gameId: highScore }
- * - litvm_tasks: Array of completed task IDs
+ * Build a prefixed key for localStorage.
+ * Example: _key('score') => 'litvm_0x1234_score' or 'litvm_guest_score'
  */
-
-const STORAGE_KEYS = {
-    SCORE: 'litvm_score',
-    RECORDS: 'litvm_records',
-    TASKS: 'litvm_tasks',
-    TRANSACTIONS: 'litvm_transactions'
-};
+function _key(baseKey) {
+    return `litvm_${activePrefix}${baseKey}`;
+}
 
 class StateManager {
     constructor() {
-        this.state = {
-            totalScore: parseInt(localStorage.getItem(STORAGE_KEYS.SCORE) || '0'),
-            gameRecords: JSON.parse(localStorage.getItem(STORAGE_KEYS.RECORDS) || '{}'),
-            completedTasks: JSON.parse(localStorage.getItem(STORAGE_KEYS.TASKS) || '[]'),
-            // Profile Data
-            nickname: localStorage.getItem('litvm_nickname') || 'Guest',
-            avatar: localStorage.getItem('litvm_avatar') || '1',
-            socials: JSON.parse(localStorage.getItem('litvm_socials') || '{"twitter":false, "email":false}'),
-            // Streak Data
-            streak: parseInt(localStorage.getItem('litvm_streak') || '0'),
-            lastLogin: localStorage.getItem('litvm_last_login') || null,
-            // Gamification
-            xp: parseInt(localStorage.getItem('litvm_xp') || '0'),
-            level: parseInt(localStorage.getItem('litvm_level') || '1'),
-            gamesPlayed: parseInt(localStorage.getItem('litvm_games_played') || '0'),
-            // Transactions
-            transactions: JSON.parse(localStorage.getItem(STORAGE_KEYS.TRANSACTIONS) || '[]'),
-            // Badge Timestamps for Sorting
-            unlockedBadges: JSON.parse(localStorage.getItem('litvm_unlocked_badges') || '{}')
-        };
-
-        // Listeners for state changes (simple simplified observer pattern)
+        // State starts empty — populated by switchAccount()
+        this.state = this._defaults();
         this.listeners = [];
+    }
+
+    _defaults() {
+        return {
+            totalScore: 0,
+            gameRecords: {},
+            completedTasks: [],
+            nickname: 'Guest',
+            avatar: '1',
+            socials: { twitter: false, google: false },
+            streak: 0,
+            lastLogin: null,
+            xp: 0,
+            level: 1,
+            gamesPlayed: 0,
+            transactions: [],
+            unlockedBadges: {}
+        };
+    }
+
+    /**
+     * Switch to a specific account.
+     * Sets the localStorage prefix and loads that account's data.
+     * @param {string} identifier - wallet address (e.g., '0x1234...') or 'guest'
+     */
+    switchAccount(identifier) {
+        // Normalize: lowercase address, short prefix
+        const id = identifier.toLowerCase();
+        activePrefix = id + '_';
+
+        // Save which account is active for page reload
+        localStorage.setItem('litvm_active_account', identifier);
+
+        // Load state from localStorage for this account
+        this._loadFromStorage();
+        this._notify();
+    }
+
+    /**
+     * Load state from localStorage using the current prefix.
+     */
+    _loadFromStorage() {
+        this.state = {
+            totalScore: parseInt(localStorage.getItem(_key(BASE_KEYS.SCORE)) || '0'),
+            gameRecords: JSON.parse(localStorage.getItem(_key(BASE_KEYS.RECORDS)) || '{}'),
+            completedTasks: JSON.parse(localStorage.getItem(_key(BASE_KEYS.TASKS)) || '[]'),
+            nickname: localStorage.getItem(_key(BASE_KEYS.NICKNAME)) || 'Guest',
+            avatar: localStorage.getItem(_key(BASE_KEYS.AVATAR)) || '1',
+            socials: JSON.parse(localStorage.getItem(_key(BASE_KEYS.SOCIALS)) || '{"twitter":false, "google":false}'),
+            streak: parseInt(localStorage.getItem(_key(BASE_KEYS.STREAK)) || '0'),
+            lastLogin: localStorage.getItem(_key(BASE_KEYS.LAST_LOGIN)) || null,
+            xp: parseInt(localStorage.getItem(_key(BASE_KEYS.XP)) || '0'),
+            level: parseInt(localStorage.getItem(_key(BASE_KEYS.LEVEL)) || '1'),
+            gamesPlayed: parseInt(localStorage.getItem(_key(BASE_KEYS.GAMES_PLAYED)) || '0'),
+            transactions: JSON.parse(localStorage.getItem(_key(BASE_KEYS.TRANSACTIONS)) || '[]'),
+            unlockedBadges: JSON.parse(localStorage.getItem(_key(BASE_KEYS.UNLOCKED_BADGES)) || '{}')
+        };
+    }
+
+    /**
+     * Get the currently active account identifier (or null).
+     */
+    getActiveAccount() {
+        return localStorage.getItem('litvm_active_account') || null;
     }
 
     setSocials(socialsData) {
         this.state.socials = socialsData;
-        this._save('litvm_socials', JSON.stringify(socialsData));
+        this._save(BASE_KEYS.SOCIALS, JSON.stringify(socialsData));
         this._notify();
     }
 
@@ -56,7 +109,7 @@ class StateManager {
     registerBadgeUnlock(badgeId) {
         if (!this.state.unlockedBadges[badgeId]) {
             this.state.unlockedBadges[badgeId] = Date.now();
-            this._save('litvm_unlocked_badges', JSON.stringify(this.state.unlockedBadges));
+            this._save(BASE_KEYS.UNLOCKED_BADGES, JSON.stringify(this.state.unlockedBadges));
             this._notify();
         }
     }
@@ -76,7 +129,7 @@ class StateManager {
 
     incrementGamesPlayed() {
         this.state.gamesPlayed++;
-        this._save('litvm_games_played', this.state.gamesPlayed);
+        this._save(BASE_KEYS.GAMES_PLAYED, this.state.gamesPlayed);
         this._notify();
     }
 
@@ -95,13 +148,13 @@ class StateManager {
     // --- Gamification Getters ---
     getXp() { return this.state.xp; }
     getLevel() { return this.state.level; }
-    getMaxXp() { return this.state.level * 100; } // Linear growth formulation: Level * 100
+    getMaxXp() { return this.state.level * 100; }
 
     // --- Setters / Actions ---
     addScore(amount, label) {
         if (amount <= 0) return;
         this.state.totalScore += amount;
-        this._save(STORAGE_KEYS.SCORE, this.state.totalScore);
+        this._save(BASE_KEYS.SCORE, this.state.totalScore);
         this.addTransaction('earn', label || 'Coins Earned', amount);
         this._notify();
     }
@@ -110,25 +163,23 @@ class StateManager {
         const currentRecord = this.getRecord(gameId);
         if (score > currentRecord) {
             this.state.gameRecords[gameId] = score;
-            this._save(STORAGE_KEYS.RECORDS, JSON.stringify(this.state.gameRecords));
+            this._save(BASE_KEYS.RECORDS, JSON.stringify(this.state.gameRecords));
             this._notify();
-            return true; // New record!
+            return true;
         }
         return false;
     }
 
-    // Updated to include XP Reward
     completeTask(taskId, reward, xpReward = 0) {
         if (this.isTaskCompleted(taskId)) return false;
 
         this.state.completedTasks.push(taskId);
-        this._save(STORAGE_KEYS.TASKS, JSON.stringify(this.state.completedTasks));
+        this._save(BASE_KEYS.TASKS, JSON.stringify(this.state.completedTasks));
 
         let stateChanged = false;
         if (reward > 0) { this.addScore(reward); stateChanged = true; }
         if (xpReward > 0) { this.addXp(xpReward); stateChanged = true; }
 
-        // If neither addScore nor addXp triggered, notify manually
         if (!stateChanged) {
             this._notify();
         }
@@ -139,7 +190,7 @@ class StateManager {
     // --- Profile Actions ---
     setNickname(name) {
         this.state.nickname = name;
-        this._save('litvm_nickname', name);
+        this._save(BASE_KEYS.NICKNAME, name);
         this._notify();
     }
 
@@ -149,7 +200,7 @@ class StateManager {
 
     setAvatar(avatarData) {
         this.state.avatar = avatarData;
-        this._save('litvm_avatar', avatarData);
+        this._save(BASE_KEYS.AVATAR, avatarData);
         this._notify();
     }
 
@@ -160,7 +211,7 @@ class StateManager {
     toggleSocial(platform) {
         if (this.state.socials[platform] !== undefined) {
             this.state.socials[platform] = !this.state.socials[platform];
-            this._save('litvm_socials', JSON.stringify(this.state.socials));
+            this._save(BASE_KEYS.SOCIALS, JSON.stringify(this.state.socials));
             this._notify();
             return this.state.socials[platform];
         }
@@ -178,15 +229,14 @@ class StateManager {
     // --- Transaction Log ---
     addTransaction(type, label, amount) {
         const tx = {
-            type,   // 'earn', 'spend', 'reward', 'streak'
+            type,
             label,
             amount,
             time: Date.now()
         };
         this.state.transactions.unshift(tx);
-        // Keep max 50
         if (this.state.transactions.length > 50) this.state.transactions.length = 50;
-        this._save(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(this.state.transactions));
+        this._save(BASE_KEYS.TRANSACTIONS, JSON.stringify(this.state.transactions));
     }
 
     getTransactions() {
@@ -198,27 +248,24 @@ class StateManager {
         if (amount <= 0) return;
         this.state.xp += amount;
 
-        // Level Up Logic
         let maxXp = this.getMaxXp();
-        // Use while loop in case multiple levels are gained at once
         while (this.state.xp >= maxXp) {
             this.state.xp -= maxXp;
             this.state.level++;
             maxXp = this.getMaxXp();
-            // Potential: trigger level up event logic here if needed, but UI usually handles via state update
         }
 
-        this._save('litvm_xp', this.state.xp);
-        this._save('litvm_level', this.state.level);
+        this._save(BASE_KEYS.XP, this.state.xp);
+        this._save(BASE_KEYS.LEVEL, this.state.level);
         this._notify();
     }
 
     setLevel(level) {
         if (level < 1) return;
         this.state.level = level;
-        this.state.xp = 0; // Reset XP for the new level
-        this._save('litvm_level', this.state.level);
-        this._save('litvm_xp', this.state.xp);
+        this.state.xp = 0;
+        this._save(BASE_KEYS.LEVEL, this.state.level);
+        this._save(BASE_KEYS.XP, this.state.xp);
         this._notify();
     }
 
@@ -227,10 +274,6 @@ class StateManager {
         return this.state.lastLogin ? parseInt(this.state.lastLogin) : 0;
     }
 
-    /**
-     * Attempt to claim the daily streak.
-     * @returns {{ success: boolean, streak?: number, remainingMs?: number }}
-     */
     claimStreak() {
         const now = Date.now();
         const lastClaim = this.getLastStreakClaim();
@@ -238,11 +281,10 @@ class StateManager {
         const FORTY_EIGHT_H = 48 * 60 * 60 * 1000;
 
         if (lastClaim === 0) {
-            // First ever claim
             this.state.streak = 1;
             this.state.lastLogin = String(now);
-            this._save('litvm_streak', this.state.streak);
-            this._save('litvm_last_login', this.state.lastLogin);
+            this._save(BASE_KEYS.STREAK, this.state.streak);
+            this._save(BASE_KEYS.LAST_LOGIN, this.state.lastLogin);
             this._notify();
             return { success: true, streak: this.state.streak };
         }
@@ -250,29 +292,22 @@ class StateManager {
         const elapsed = now - lastClaim;
 
         if (elapsed < TWENTY_FOUR_H) {
-            // Too early — show remaining time
             return { success: false, remainingMs: TWENTY_FOUR_H - elapsed };
         }
 
         if (elapsed >= FORTY_EIGHT_H) {
-            // Missed the window — streak resets
             this.state.streak = 1;
         } else {
-            // Within 24h–48h window — consecutive claim
             this.state.streak += 1;
         }
 
         this.state.lastLogin = String(now);
-        this._save('litvm_streak', this.state.streak);
-        this._save('litvm_last_login', this.state.lastLogin);
+        this._save(BASE_KEYS.STREAK, this.state.streak);
+        this._save(BASE_KEYS.LAST_LOGIN, this.state.lastLogin);
         this._notify();
         return { success: true, streak: this.state.streak };
     }
 
-    /**
-     * Check if the streak has expired (>48h since last claim) and reset if so.
-     * Called on app init to keep the UI accurate.
-     */
     checkStreakExpiry() {
         const lastClaim = this.getLastStreakClaim();
         if (lastClaim === 0) return;
@@ -282,7 +317,7 @@ class StateManager {
 
         if (elapsed >= FORTY_EIGHT_H && this.state.streak > 0) {
             this.state.streak = 0;
-            this._save('litvm_streak', 0);
+            this._save(BASE_KEYS.STREAK, 0);
             this._notify();
         }
     }
@@ -295,25 +330,21 @@ class StateManager {
         }
         currentWallet = walletAddress;
 
-        // Fetch profile
         let profile = await getUserProfile(currentWallet);
 
         if (!profile) {
-            // First time user? Create profile
-            // Use current local state as initial values if appropriate, or default
             profile = await createUserProfile(currentWallet, this.state.nickname);
         }
 
         if (profile) {
-            // Merge Supabase data into local state
-            // Prioritize Supabase data as "cloud save"
+            // Merge Supabase data into local state (cloud = priority)
             this.state.nickname = profile.nickname || this.state.nickname;
             this.state.totalScore = profile.balance !== undefined ? profile.balance : this.state.totalScore;
             this.state.xp = profile.xp !== undefined ? profile.xp : this.state.xp;
             this.state.level = profile.level !== undefined ? profile.level : this.state.level;
             this.state.streak = profile.streak !== undefined ? profile.streak : this.state.streak;
 
-            // Sync socials to Supabase (twitter_handle, google_email)
+            // Sync socials to Supabase
             const socials = this.state.socials;
             const socialUpdates = {};
             if (socials.twitter && socials.twitter !== true) socialUpdates.twitter_handle = socials.twitter;
@@ -324,64 +355,53 @@ class StateManager {
                 }).catch(err => console.error("Failed to sync socials:", err));
             }
 
-            // Persist merged state to local storage
+            // Persist merged state to localStorage (under current prefix)
             this._saveAll();
             this._notify();
         }
     }
 
-    // --- Disconnect / Reset ---
+    // --- Disconnect ---
     disconnect() {
         currentWallet = null;
-        // Optionally reset local state to defaults or keep as cached?
-        // For security/privacy, better to reset to Guest defaults
-        this.state.nickname = 'Guest';
-        this.state.avatar = '1';
-        this.state.totalScore = 0;
-        this.state.gameRecords = {};
-        this.state.completedTasks = [];
-        this.state.socials = { twitter: false, google: false };
-        this.state.streak = 0;
-        this.state.lastLogin = null;
-        this.state.xp = 0;
-        this.state.level = 1;
-        this.state.unlockedBadges = {};
-
-        this._saveAll(); // Overwrite local storage with defaults
+        activePrefix = '';
+        localStorage.removeItem('litvm_active_account');
+        // Reset in-memory state to defaults (no localStorage writes — data stays under its prefix)
+        this.state = this._defaults();
         this._notify();
     }
 
     _saveAll() {
-        this._save(STORAGE_KEYS.SCORE, this.state.totalScore);
-        this._save('litvm_nickname', this.state.nickname);
-        this._save('litvm_avatar', this.state.avatar);
-        this._save('litvm_xp', this.state.xp);
-        this._save('litvm_level', this.state.level);
-        this._save('litvm_streak', this.state.streak);
-        this._save('litvm_last_login', this.state.lastLogin);
-        this._save('litvm_unlocked_badges', JSON.stringify(this.state.unlockedBadges));
+        this._save(BASE_KEYS.SCORE, this.state.totalScore);
+        this._save(BASE_KEYS.NICKNAME, this.state.nickname);
+        this._save(BASE_KEYS.AVATAR, this.state.avatar);
+        this._save(BASE_KEYS.XP, this.state.xp);
+        this._save(BASE_KEYS.LEVEL, this.state.level);
+        this._save(BASE_KEYS.STREAK, this.state.streak);
+        this._save(BASE_KEYS.LAST_LOGIN, this.state.lastLogin);
+        this._save(BASE_KEYS.UNLOCKED_BADGES, JSON.stringify(this.state.unlockedBadges));
     }
 
-    _save(key, value) {
-        localStorage.setItem(key, value);
+    _save(baseKey, value) {
+        const fullKey = _key(baseKey);
+        localStorage.setItem(fullKey, value);
 
         // If wallet connected, sync specific fields to Supabase
         if (currentWallet) {
             const updates = {};
-            if (key === STORAGE_KEYS.SCORE) updates.balance = this.state.totalScore;
-            if (key === 'litvm_nickname') updates.nickname = this.state.nickname;
-            if (key === 'litvm_xp') updates.xp = this.state.xp;
-            if (key === 'litvm_level') updates.level = this.state.level;
-            if (key === 'litvm_streak') updates.streak = this.state.streak;
-            if (key === 'litvm_last_login') updates.last_login = this.state.lastLogin;
-            if (key === 'litvm_socials') {
+            if (baseKey === BASE_KEYS.SCORE) updates.balance = this.state.totalScore;
+            if (baseKey === BASE_KEYS.NICKNAME) updates.nickname = this.state.nickname;
+            if (baseKey === BASE_KEYS.XP) updates.xp = this.state.xp;
+            if (baseKey === BASE_KEYS.LEVEL) updates.level = this.state.level;
+            if (baseKey === BASE_KEYS.STREAK) updates.streak = this.state.streak;
+            if (baseKey === BASE_KEYS.LAST_LOGIN) updates.last_login = this.state.lastLogin;
+            if (baseKey === BASE_KEYS.SOCIALS) {
                 const socials = this.state.socials;
                 if (socials.twitter && socials.twitter !== true) updates.twitter_handle = socials.twitter;
                 if (socials.google && socials.google !== true) updates.google_email = socials.google;
             }
 
             if (Object.keys(updates).length > 0) {
-                // Debounce could be good here, but for now direct update
                 updateUserProfile(currentWallet, updates);
             }
         }

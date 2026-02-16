@@ -318,27 +318,16 @@ function setupGuestShortcut() {
 }
 
 function loginAsGuest() {
-    // Mock Guest State
-    userAddress = "guest_0x00000000000000000000000000000000"; // Dummy address
+    userAddress = "guest_0x00000000000000000000000000000000";
 
-    // Preserve avatar before disconnect wipes it
-    const savedAvatar = stateManager.getAvatar();
+    // Switch to guest account (loads guest-specific data from localStorage)
+    stateManager.switchAccount('guest');
 
-    // Ensure we are disconnected from any real wallet first
-    stateManager.disconnect();
-
-    // Restore avatar immediately after disconnect
-    if (savedAvatar && savedAvatar !== '1') {
-        stateManager.setAvatar(savedAvatar);
-    }
-
-    // Sync with Supabase, then restore avatar AGAIN after sync to prevent
-    // _saveAll() inside syncWithSupabase from overwriting our restored avatar
+    // Sync with Supabase for guest profile
     stateManager.syncWithSupabase(userAddress).then(() => {
-        stateManager.setNickname("Guest User");
-        // Re-apply avatar after sync to guard against _saveAll() overwrite
-        if (savedAvatar && savedAvatar !== '1') {
-            stateManager.setAvatar(savedAvatar);
+        // Only set default nickname if guest has never set one
+        if (stateManager.getNickname() === 'Guest') {
+            stateManager.setNickname('Guest User');
         }
         updateProfileUI();
     });
@@ -646,6 +635,7 @@ async function checkWalletConnection() {
             const accounts = await window.ethereum.request({ method: 'eth_accounts' });
             if (accounts.length > 0) {
                 userAddress = accounts[0];
+                stateManager.switchAccount(userAddress);
                 await stateManager.syncWithSupabase(userAddress);
                 renderWalletUI();
                 listenToWalletEvents();
@@ -678,6 +668,7 @@ async function connectWallet() {
             localStorage.removeItem('walletManuallyDisconnected');
 
             userAddress = accounts[0];
+            stateManager.switchAccount(userAddress);
             await stateManager.syncWithSupabase(userAddress);
             renderWalletUI();
             listenToWalletEvents();
@@ -698,15 +689,8 @@ function disconnectWallet() {
         // Clear Guest Flag if present
         localStorage.removeItem('isGuestSession');
 
-        // Reset State Manager (clears Supabase link and resets stats)
-        // Preserve Twitter social state — it's linked to Supabase Auth, not the wallet
-        const twitterState = stateManager.getSocials()?.twitter;
+        // Disconnect — clears active account, data stays in localStorage under its prefix
         stateManager.disconnect();
-        if (twitterState) {
-            const socials = stateManager.getSocials() || {};
-            socials.twitter = twitterState;
-            stateManager.setSocials(socials);
-        }
 
         renderWalletUI();
 
@@ -721,10 +705,11 @@ function listenToWalletEvents() {
     window.ethereum.on('accountsChanged', async (accounts) => {
         if (accounts.length > 0) {
             userAddress = accounts[0];
+            stateManager.switchAccount(userAddress);
             await stateManager.syncWithSupabase(userAddress);
         } else {
             userAddress = null;
-            stateManager.syncWithSupabase(null); // Clear sync
+            stateManager.disconnect();
         }
         renderWalletUI();
     });
