@@ -650,6 +650,29 @@ document.getElementById('badge-detail-modal')?.addEventListener('click', (e) => 
 
 // --- Wallet Logic ---
 let userAddress = null;
+let isVerifying = false; // Prevent overlapping requests
+
+async function verifyWalletOwnership(address) {
+    if (isVerifying) return false;
+    isVerifying = true;
+
+    try {
+        const msg = `Welcome to LitVM Arcade Hub!\n\nPlease sign this message to verify you own this wallet.\n\nWallet: ${address}\nTimestamp: ${Date.now()}`;
+
+        // Request signature
+        await window.ethereum.request({
+            method: 'personal_sign',
+            params: [msg, address],
+        });
+
+        isVerifying = false;
+        return true;
+    } catch (err) {
+        console.warn("User rejected signature request:", err);
+        isVerifying = false;
+        return false;
+    }
+}
 
 async function checkWalletConnection() {
     // Check if user manually disconnected previously
@@ -669,6 +692,9 @@ async function checkWalletConnection() {
             const accounts = await window.ethereum.request({ method: 'eth_accounts' });
             if (accounts.length > 0) {
                 userAddress = accounts[0];
+                // For page reload, we trust 'eth_accounts' if they were already connected.
+                // We DON'T force signature on every F5 reload to avoid UX friction,
+                // BUT we DO force it on initial Connect and Account Switch.
                 stateManager.switchAccount(userAddress);
                 await stateManager.syncWithSupabase(userAddress);
                 renderWalletUI();
@@ -698,10 +724,21 @@ async function connectWallet() {
     try {
         const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         if (accounts.length > 0) {
+            const tempAddress = accounts[0];
+
+            // Verify Ownership via Signature
+            const isVerified = await verifyWalletOwnership(tempAddress);
+            if (!isVerified) {
+                els.btnConnectWallet.textContent = 'Connect Wallet';
+                showAlertModal("Signature rejected. Connection cancelled.", "VERIFICATION FAILED");
+                return;
+            }
+
+            // Verification Success
             // User explicitly connected, clear the disconnect flag
             localStorage.removeItem('walletManuallyDisconnected');
 
-            userAddress = accounts[0];
+            userAddress = tempAddress;
             stateManager.switchAccount(userAddress);
             await stateManager.syncWithSupabase(userAddress);
             renderWalletUI();
@@ -738,17 +775,42 @@ function disconnectWallet() {
 function listenToWalletEvents() {
     window.ethereum.on('accountsChanged', async (accounts) => {
         if (accounts.length > 0) {
-            userAddress = accounts[0];
-            stateManager.switchAccount(userAddress);
-            await stateManager.syncWithSupabase(userAddress);
+            const newAddress = accounts[0];
+
+            // Verify new account ownership
+            // Use a slight delay to allow MM to complete its internal switch
+            setTimeout(async () => {
+                const isVerified = await verifyWalletOwnership(newAddress);
+
+                if (isVerified) {
+                    processAccountSwitch(newAddress);
+                } else {
+                    // If rejected, we must effectively disconnect or revert
+                    // But we can't force MM to revert. So we just Log Out of the App.
+                    userAddress = null;
+                    stateManager.disconnect();
+                    localStorage.setItem('walletManuallyDisconnected', 'true');
+                    renderWalletUI();
+                    showAlertModal("Ownership not verified. Logged out.", "SECURITY ALERT");
+                }
+            }, 500);
+
         } else {
             userAddress = null;
             stateManager.disconnect();
+            renderWalletUI();
         }
-        renderWalletUI();
     });
 
     window.ethereum.on('chainChanged', () => window.location.reload());
+}
+
+async function processAccountSwitch(newAddress) {
+    userAddress = newAddress;
+    stateManager.switchAccount(userAddress);
+    await stateManager.syncWithSupabase(userAddress);
+    renderWalletUI();
+    showAlertModal(`Switched to account: ${truncateAddress(newAddress)}`, "IDENTITY VERIFIED");
 }
 
 function renderWalletUI() {
