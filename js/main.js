@@ -75,6 +75,21 @@ const els = {
 // --- Initialization ---
 async function init() {
 
+    // --- CRITICAL FIX: Restore Active Account Context BEFORE processing OAuth ---
+    // Why: When returning from Google/Twitter redirect, stateManager is reset to defaults.
+    // Use the stored active account (e.g., '0x123...') to load the correct profile first.
+    const lastActiveAccount = stateManager.getActiveAccount();
+    if (lastActiveAccount) {
+        console.log("♻️ Restoring session context for:", lastActiveAccount);
+        stateManager.switchAccount(lastActiveAccount);
+
+        // If it was a wallet, userAddress needs to be set so UI knows we are "connected"
+        // (Visual only - actual web3 connection happens in checkWalletConnection later)
+        if (lastActiveAccount.startsWith('0x')) {
+            userAddress = lastActiveAccount;
+        }
+    }
+
     // Check for Supabase Session (e.g. returning from Twitter OAuth)
     try {
         const { session } = await getSession();
@@ -131,14 +146,17 @@ async function init() {
                 dbUpdates.google_email = currentSocials.google;
             }
             if (Object.keys(dbUpdates).length > 0) {
-                // Try updating by wallet_address from localStorage
-                const savedWallet = stateManager.getWallet();
-                if (savedWallet) {
-                    updateUserProfile(savedWallet, dbUpdates).then(() => {
+                // Try updating by wallet_address from localStorage OR restored context
+                const targetWallet = stateManager.getWallet() || (lastActiveAccount && lastActiveAccount.startsWith('0x') ? lastActiveAccount : null);
+
+                if (targetWallet) {
+                    updateUserProfile(targetWallet, dbUpdates).then(() => {
                         console.log("Synced socials to Supabase:", dbUpdates);
                     }).catch(err => {
                         console.error("Failed to sync socials to Supabase:", err);
                     });
+                } else {
+                    console.warn("⚠️ Could not sync socials to Supabase: No wallet context found.");
                 }
             }
         } else {
