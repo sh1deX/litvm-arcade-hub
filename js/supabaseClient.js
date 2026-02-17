@@ -20,11 +20,17 @@ export async function getUserProfile(walletAddress) {
     return data;
 }
 
-export async function createUserProfile(walletAddress, nickname = 'Guest') {
+export async function createUserProfile(walletAddress) {
+    // New Profile = Always 'Guest', ignore local state
     const { data, error } = await supabase
         .from('profiles')
         .insert([
-            { wallet_address: walletAddress, nickname: nickname }
+            {
+                wallet_address: walletAddress,
+                nickname: 'Guest',
+                unlocked_badges: {},
+                game_records: {}
+            }
         ])
         .select()
         .single();

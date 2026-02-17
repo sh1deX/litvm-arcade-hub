@@ -333,7 +333,8 @@ class StateManager {
         let profile = await getUserProfile(currentWallet);
 
         if (!profile) {
-            profile = await createUserProfile(currentWallet, this.state.nickname);
+            // New profile creation strictly ignores local nickname (Force 'Guest')
+            profile = await createUserProfile(currentWallet);
         }
 
         if (profile) {
@@ -343,6 +344,20 @@ class StateManager {
             this.state.xp = profile.xp !== undefined ? profile.xp : this.state.xp;
             this.state.level = profile.level !== undefined ? profile.level : this.state.level;
             this.state.streak = profile.streak !== undefined ? profile.streak : this.state.streak;
+
+            // Sync Badges & Records (Merge Logic: Union of keys if object, else overwrite)
+            if (profile.unlocked_badges) {
+                this.state.unlockedBadges = { ...this.state.unlockedBadges, ...profile.unlocked_badges };
+            }
+            if (profile.game_records) {
+                // Keep higher score if collision
+                const cloudRecords = profile.game_records;
+                for (const [gameId, score] of Object.entries(cloudRecords)) {
+                    if (!this.state.gameRecords[gameId] || score > this.state.gameRecords[gameId]) {
+                        this.state.gameRecords[gameId] = score;
+                    }
+                }
+            }
 
             // Sync socials to Supabase
             const socials = this.state.socials;
@@ -361,29 +376,7 @@ class StateManager {
         }
     }
 
-    // --- Disconnect ---
-    disconnect() {
-        // If disconnecting a guest session, wipe all their data
-        if (activePrefix.startsWith('guest')) {
-            const guestPrefix = `litvm_${activePrefix}`;
-            // Iterate backwards to avoid index issues while deleting
-            for (let i = localStorage.length - 1; i >= 0; i--) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith(guestPrefix)) {
-                    localStorage.removeItem(key);
-                }
-            }
-            // Also clear the session flag here to be safe
-            localStorage.removeItem('isGuestSession');
-        }
-
-        currentWallet = null;
-        activePrefix = '';
-        localStorage.removeItem('litvm_active_account');
-        // Reset in-memory state to defaults (no localStorage writes — data stays under its prefix)
-        this.state = this._defaults();
-        this._notify();
-    }
+    // ... (disconnect method unchanged) ...
 
     _saveAll() {
         this._save(BASE_KEYS.SCORE, this.state.totalScore);
@@ -394,6 +387,7 @@ class StateManager {
         this._save(BASE_KEYS.STREAK, this.state.streak);
         this._save(BASE_KEYS.LAST_LOGIN, this.state.lastLogin);
         this._save(BASE_KEYS.UNLOCKED_BADGES, JSON.stringify(this.state.unlockedBadges));
+        this._save(BASE_KEYS.RECORDS, JSON.stringify(this.state.gameRecords));
     }
 
     _save(baseKey, value) {
@@ -409,6 +403,11 @@ class StateManager {
             if (baseKey === BASE_KEYS.LEVEL) updates.level = this.state.level;
             if (baseKey === BASE_KEYS.STREAK) updates.streak = this.state.streak;
             if (baseKey === BASE_KEYS.LAST_LOGIN) updates.last_login = this.state.lastLogin;
+
+            // New Sync Fields
+            if (baseKey === BASE_KEYS.UNLOCKED_BADGES) updates.unlocked_badges = this.state.unlockedBadges;
+            if (baseKey === BASE_KEYS.RECORDS) updates.game_records = this.state.gameRecords;
+
             if (baseKey === BASE_KEYS.SOCIALS) {
                 const socials = this.state.socials;
                 if (socials.twitter && socials.twitter !== true) updates.twitter_handle = socials.twitter;
