@@ -363,6 +363,20 @@ class StateManager {
 
     // --- Disconnect ---
     disconnect() {
+        // If disconnecting a guest session, wipe all their data
+        if (activePrefix.startsWith('guest')) {
+            const guestPrefix = `litvm_${activePrefix}`;
+            // Iterate backwards to avoid index issues while deleting
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(guestPrefix)) {
+                    localStorage.removeItem(key);
+                }
+            }
+            // Also clear the session flag here to be safe
+            localStorage.removeItem('isGuestSession');
+        }
+
         currentWallet = null;
         activePrefix = '';
         localStorage.removeItem('litvm_active_account');

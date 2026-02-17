@@ -248,7 +248,23 @@ async function init() {
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeModals();
+
+        // Secret Guest Mode: Press 'm' 3 times to login
+        if (e.key.toLowerCase() === 'm' && !e.target.matches('input, textarea')) {
+            const now = Date.now();
+            if (now - lastMKeyTime > 1000) {
+                mKeyCount = 0; // Reset if too slow (>1s)
+            }
+            mKeyCount++;
+            lastMKeyTime = now;
+
+            if (mKeyCount === 3) {
+                loginAsGuest();
+                mKeyCount = 0;
+            }
+        }
     });
+
 
     // Streak Click — Claim daily streak
     const streakContainer = document.getElementById('daily-streak-container');
