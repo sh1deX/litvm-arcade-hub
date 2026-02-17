@@ -334,7 +334,25 @@ class StateManager {
 
         if (!profile) {
             // New profile creation strictly ignores local nickname (Force 'Guest')
+            // AND forces a reset of stats to Level 1, XP 0, etc.
             profile = await createUserProfile(currentWallet);
+
+            // Explicitly overwrite local state for critical stats to avoid 'ghost' data
+            // This ensures that even if localStorage has old data, a new DB profile forces a fresh start.
+            if (profile) {
+                this.state.nickname = 'Guest';
+                this.state.level = 1;
+                this.state.xp = 0;
+                this.state.totalScore = 0;
+                this.state.streak = 0;
+                this.state.unlockedBadges = {};
+                this.state.gameRecords = {};
+                this.state.socials = { twitter: false, google: false };
+                this.state.transactions = [];
+                // Force immediate save to clear localStorage ghost data
+                this._saveAll();
+                this._notify();
+            }
         }
 
         if (profile) {
