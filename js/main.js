@@ -750,13 +750,20 @@ async function connectWallet() {
 }
 
 function disconnectWallet() {
-    showConfirmModal("Disconnect your wallet?", () => {
+    showConfirmModal("Disconnect your wallet?", async () => {
         userAddress = null;
         // Set flag to prevent auto-reconnect on reload
         localStorage.setItem('walletManuallyDisconnected', 'true');
 
         // Clear Guest Flag if present
         localStorage.removeItem('isGuestSession');
+
+        // FORCE SUPABASE LOGOUT to prevent social account leaks
+        try {
+            await signOut();
+        } catch (err) {
+            console.error("Error signing out of Supabase:", err);
+        }
 
         // Disconnect — clears active account, data stays in localStorage under its prefix
         stateManager.disconnect();
@@ -1436,6 +1443,7 @@ function initDropdownLogic() {
 
         // Initialize state
         updateEmailBtnState();
+        stateManager.subscribe(updateEmailBtnState);
 
         newEmailBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1502,6 +1510,7 @@ function initDropdownLogic() {
         };
 
         updateGoogleBtnState();
+        stateManager.subscribe(updateGoogleBtnState);
 
         newGoogleBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -1555,6 +1564,7 @@ function initDropdownLogic() {
         };
 
         updateTwitterBtnState();
+        stateManager.subscribe(updateTwitterBtnState);
 
         newTwitterBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
