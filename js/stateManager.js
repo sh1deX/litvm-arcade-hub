@@ -59,6 +59,14 @@ class StateManager {
      * @param {string} identifier - wallet address (e.g., '0x1234...') or 'guest'
      */
     switchAccount(identifier) {
+        if (!identifier) {
+            // Disconnect case
+            localStorage.removeItem('litvm_active_account');
+            this.state = this._defaults();
+            this._notify();
+            return;
+        }
+
         // Normalize: lowercase address, short prefix
         const id = identifier.toLowerCase();
         activePrefix = id + '_';
@@ -69,6 +77,10 @@ class StateManager {
         // Load state from localStorage for this account
         this._loadFromStorage();
         this._notify();
+    }
+
+    disconnect() {
+        this.switchAccount(null);
     }
 
     /**
