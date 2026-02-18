@@ -1608,3 +1608,60 @@ function saveNickname(name) {
         updateProfileUI(); // Updates header
     }
 }
+
+// --- Mission Timer Logic ---
+let missionTimerInterval;
+
+function updateMissionsTimer() {
+    const timerEl = document.getElementById('missions-timer');
+    if (!timerEl) return;
+
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setUTCHours(24, 0, 0, 0);
+    // If we are already past 24:00 UTC (not possible due to date logic, but safe check)
+    if (tomorrow <= now) tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const diff = tomorrow - now;
+
+    const h = Math.floor(diff / (1000 * 60 * 60));
+    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const s = Math.floor((diff % (1000 * 60)) / 1000);
+
+    timerEl.textContent = `Resets in ${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function startMissionTimer() {
+    updateMissionsTimer();
+    if (missionTimerInterval) clearInterval(missionTimerInterval);
+    missionTimerInterval = setInterval(updateMissionsTimer, 1000);
+}
+
+function stopMissionTimer() {
+    if (missionTimerInterval) clearInterval(missionTimerInterval);
+}
+
+// Hook into modal opening (Global overrides)
+// Store original functions if they exist, or just overwrite/extend since we control main.js
+// Actually, let's just add an event listener for clicks that might open the modal, 
+// OR better yet, expose these functions and update the HTML onclicks if needed.
+// But wait, the modal is opened by 'btn-missions'. Let's find that listener.
+
+// For now, I'll just override the global showModal if it exists, or just append this logic.
+// Simpler: let's add a global click listener that checks if the missions modal is being opened.
+
+document.addEventListener('click', (e) => {
+    // If clicking the missions button
+    if (e.target.closest('#btn-missions') || e.target.closest('[data-modal="modal-missions"]')) {
+        startMissionTimer();
+    }
+    // If closing modal
+    if (e.target.closest('.close-modal') || e.target === document.getElementById('modal-overlay')) {
+        stopMissionTimer();
+    }
+});
+
+// Explicit listener for dock button to ensure it triggers
+document.getElementById('btn-missions')?.addEventListener('click', () => {
+    startMissionTimer();
+});

@@ -41,8 +41,10 @@ export default class Lit2048 {
                 </div>
                 <div id="game-overlay" style="display:none; text-align:center; padding: 20px; flex-direction: column; align-items: center;">
                     <h3 id="overlay-msg">Game Over!</h3>
-                    <button id="restart-btn" class="btn-neon">Try Again</button>
-                    <button id="exit-btn" class="btn-neon" style="margin-top:10px;">Exit</button>
+                    <div style="display: flex; gap: 15px; margin-top: 20px;">
+                        <button id="restart-btn" class="btn-neon">Try Again</button>
+                        <button id="exit-btn" class="btn-neon" style="border-color: #ff3333; color: #ff3333;">Exit</button>
+                    </div>
                 </div>
             </div>
         `;
