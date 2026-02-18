@@ -186,11 +186,9 @@ async function init() {
     // Always render avatar from localStorage on init (don't rely only on _notify subscribers)
     updateProfileUI();
 
-    // TEMPORARY: User Request - Boost to Level 5 (Moved here to ensure post-sync)
-    if (stateManager.getLevel() < 5) {
-        console.log("🚀 Applying User Request: Boosting to Level 5...");
-        stateManager.setLevel(5);
-    }
+
+    // Setup Secret Guest Shortcut (Triple M)
+
 
     // Setup Secret Guest Shortcut (Triple M)
     setupGuestShortcut();
